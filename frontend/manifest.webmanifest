@@ -1,0 +1,16 @@
+{
+  "name": "Audit Control Center",
+  "short_name": "AuditControl",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08191c",
+  "theme_color": "#0f3d3e",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

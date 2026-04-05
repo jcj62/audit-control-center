@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f3d3e">
+  <title>Audit Control Center</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">AC</div>
+        <div>
+          <h1>Audit Control</h1>
+          <p>WhatsApp-driven field ingestion</p>
+        </div>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Audit</h2>
+          <span id="auditStatus" class="pill muted">No active audit</span>
+        </div>
+
+        <label class="field">
+          <span>Name</span>
+          <input id="auditName" type="text" placeholder="Hospital / site name">
+        </label>
+
+        <button id="createAuditBtn" class="primary">Create Audit</button>
+        <button id="openKewBtnInline" class="ghost">Open KEW Pipeline</button>
+
+        <label class="field">
+          <span>Switch Active Audit</span>
+          <select id="auditSelect"></select>
+        </label>
+
+        <button id="refreshBtn" class="ghost">Refresh Dashboard</button>
+        <button id="reportBtn" class="ghost">Generate DOCX Report</button>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Bot Status</h2>
+          <span id="connectionPill" class="pill muted">Offline</span>
+        </div>
+        <p class="small" id="botMeta">Waiting for backend</p>
+        <div class="qr-frame">
+          <img id="qrImage" alt="WhatsApp QR code">
+          <p id="qrHint" class="small">QR will appear here when the bot asks for login.</p>
+        </div>
+        <button id="logoutBotBtn" class="ghost danger">Log Out Bot</button>
+      </section>
+    </aside>
+
+    <main class="main">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Live operations</p>
+          <h2>Control center for audits, groups, and ingestion</h2>
+          <p class="hero-copy">Select the active audit, choose monitored groups, and edit faults as messages arrive.</p>
+        </div>
+        <div class="hero-stats" id="heroStats"></div>
+      </section>
+
+      <section class="grid">
+        <section class="card groups-card">
+          <div class="card-head">
+            <h2>Monitored Group Names</h2>
+            <button id="saveGroupsBtn" class="primary small-btn">Save Selection</button>
+          </div>
+          <label class="field">
+            <span>Type one group name per line</span>
+            <textarea id="groupNamesInput" class="group-textarea" placeholder="Example Group&#10;Maintenance Team&#10;Electrical Audit"></textarea>
+          </label>
+          <p id="groupHelp" class="small">The bot will monitor only the WhatsApp groups whose names match these entries.</p>
+        </section>
+
+        <section class="card columns-card">
+          <div class="card-head">
+            <h2>Custom Columns</h2>
+            <button id="addColumnBtn" class="primary small-btn">Add Column</button>
+          </div>
+          <div id="columnsList" class="column-list"></div>
+        </section>
+      </section>
+
+      <section class="card table-card">
+        <div class="card-head">
+          <h2>Faults</h2>
+          <input id="searchInput" class="search" type="search" placeholder="Search building, fault, message, sender">
+        </div>
+        <div class="table-wrap">
+          <table id="faultTable">
+            <thead id="faultHead"></thead>
+            <tbody id="faultBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <button id="openKewBtn" class="fab" type="button" aria-label="Open KEW automation pipeline">+</button>
+
+  <section id="kewPanel" class="kew-panel hidden" aria-hidden="true">
+    <div class="kew-panel-head">
+      <div>
+        <p class="eyebrow">KEW Automation</p>
+        <h2>KEW CSV to workbook pipeline</h2>
+      </div>
+      <button id="closeKewBtn" class="ghost small-btn" type="button">Close</button>
+    </div>
+
+    <p class="small">Upload one or more KEW CSV exports and the app will generate a formatted Excel workbook with the same logic as your standalone KEW automation script.</p>
+
+    <label class="field">
+      <span>Output File Name</span>
+      <input id="kewOutputName" type="text" placeholder="kew_report">
+    </label>
+
+    <label class="field">
+      <span>Link To Audit</span>
+      <select id="kewAuditSelect"></select>
+    </label>
+
+    <label class="field">
+      <span>CSV Files</span>
+      <input id="kewFiles" type="file" accept=".csv,text/csv" multiple>
+    </label>
+
+    <label class="group-item">
+      <input id="kewBundleToggle" type="checkbox">
+      <div>
+        <strong>Generate KEW + DOCX Bundle</strong>
+        <span>Create a zip with the new KEW workbook and the linked audit report.</span>
+      </div>
+    </label>
+
+    <button id="runKewBtn" class="primary" type="button">Run KEW Pipeline</button>
+    <button id="generateBundleBtn" class="ghost" type="button">Generate Bundle From Latest Linked KEW Run</button>
+    <p id="kewStatus" class="small">Idle</p>
+    <div id="kewResult" class="kew-result"></div>
+    <div id="kewHistory" class="column-list"></div>
+  </section>
+
+  <template id="groupItemTemplate">
+    <label class="group-item">
+      <input type="checkbox">
+      <div>
+        <strong></strong>
+        <span></span>
+      </div>
+    </label>
+  </template>
+
+  <template id="columnItemTemplate">
+    <div class="column-item">
+      <div>
+        <strong></strong>
+        <span></span>
+      </div>
+      <button class="ghost danger small-btn">Delete</button>
+    </div>
+  </template>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
