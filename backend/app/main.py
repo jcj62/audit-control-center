@@ -17,7 +17,7 @@ from .database import Base, SessionLocal, engine, get_db
 from .kew_pipeline import build_kew_workbook
 from .models import Audit, BotConfig, Fault, FaultColumn, KewRun
 from .parser import parse_message
-from .reports import generate_docx_report
+from .reports import generate_docx_report, generate_docx_report_uniform_images
 from .schemas import AuditCreate, AuditRead, BotStatePatch, FaultColumnCreate, FaultUpdate, WhatsappMessageIn
 
 CORE_COLUMNS = [
@@ -518,7 +518,25 @@ def build_report(audit_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Audit not found")
 
     file_path = generate_docx_report(db, audit, settings.reports_dir, settings.media_dir)
-    return {"file": str(file_path)}
+    return {
+        "file": str(file_path),
+        "file_name": file_path.name,
+        "download_url": f"/downloads/{file_path.name}",
+    }
+
+
+@app.get("/api/reports/{audit_id}/uniform")
+def build_uniform_report(audit_id: int, db: Session = Depends(get_db)) -> dict:
+    audit = db.get(Audit, audit_id)
+    if audit is None:
+        raise HTTPException(status_code=404, detail="Audit not found")
+
+    file_path = generate_docx_report_uniform_images(db, audit, settings.reports_dir, settings.media_dir)
+    return {
+        "file": str(file_path),
+        "file_name": file_path.name,
+        "download_url": f"/downloads/{file_path.name}",
+    }
 
 
 @app.post("/api/kew/process")

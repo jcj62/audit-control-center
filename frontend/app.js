@@ -7,6 +7,8 @@ const state = {
   kewRuns: [],
   draftGroupNames: [],
   groupSelectionDirty: false,
+  tableEditDepth: 0,
+  draftFaultValues: {},
 };
 
 const elements = {
@@ -28,6 +30,7 @@ const elements = {
   openKewBtnInline: document.getElementById("openKewBtnInline"),
   refreshBtn: document.getElementById("refreshBtn"),
   reportBtn: document.getElementById("reportBtn"),
+  reportUniformBtn: document.getElementById("reportUniformBtn"),
   logoutBotBtn: document.getElementById("logoutBotBtn"),
   saveGroupsBtn: document.getElementById("saveGroupsBtn"),
   addColumnBtn: document.getElementById("addColumnBtn"),
@@ -250,6 +253,72 @@ function filteredFaults() {
   return state.faults.filter((fault) => JSON.stringify(fault).toLowerCase().includes(query));
 }
 
+function tableEditingActive() {
+  return state.tableEditDepth > 0 || Object.keys(state.draftFaultValues).length > 0;
+}
+
+function beginTableEdit() {
+  state.tableEditDepth += 1;
+}
+
+function endTableEdit() {
+  state.tableEditDepth = Math.max(0, state.tableEditDepth - 1);
+}
+
+function draftFaultValue(fault, columnName) {
+  return state.draftFaultValues[fault.id]?.[columnName] ?? fault[columnName] ?? "";
+}
+
+function updateDraftFaultValue(faultId, columnName, value) {
+  const nextDraft = { ...(state.draftFaultValues[faultId] || {}) };
+  nextDraft[columnName] = value;
+  state.draftFaultValues = {
+    ...state.draftFaultValues,
+    [faultId]: nextDraft,
+  };
+}
+
+function clearDraftFaultValue(faultId) {
+  const nextDrafts = { ...state.draftFaultValues };
+  delete nextDrafts[faultId];
+  state.draftFaultValues = nextDrafts;
+}
+
+function faultHasDraftChanges(fault) {
+  const draft = state.draftFaultValues[fault.id];
+  if (!draft) {
+    return false;
+  }
+
+  return Object.entries(draft).some(([key, value]) => String(fault[key] || "") !== String(value || ""));
+}
+
+async function saveFaultDraft(fault) {
+  const draft = state.draftFaultValues[fault.id];
+  if (!draft) {
+    return;
+  }
+
+  const changedValues = Object.fromEntries(
+    Object.entries(draft).filter(([key, value]) => String(fault[key] || "") !== String(value || "")),
+  );
+
+  if (!Object.keys(changedValues).length) {
+    clearDraftFaultValue(fault.id);
+    renderTable();
+    return;
+  }
+
+  await api(`/api/faults/${fault.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ values: changedValues }),
+  });
+
+  Object.assign(fault, changedValues);
+  clearDraftFaultValue(fault.id);
+  renderTable();
+}
+
 function renderTable() {
   const columns = visibleColumns();
   elements.faultHead.innerHTML = "";
@@ -284,6 +353,21 @@ function renderTable() {
         const wrapper = document.createElement("div");
         wrapper.className = "row-actions";
 
+        const saveButton = document.createElement("button");
+        saveButton.className = "primary small-btn";
+        saveButton.textContent = faultHasDraftChanges(fault) ? "Save" : "Saved";
+        saveButton.disabled = !faultHasDraftChanges(fault);
+        saveButton.addEventListener("click", async () => {
+          saveButton.disabled = true;
+          try {
+            await saveFaultDraft(fault);
+          } catch (error) {
+            console.error(error);
+            window.alert(`Could not save this row: ${error.message}`);
+            renderTable();
+          }
+        });
+
         const reclassify = document.createElement("button");
         reclassify.className = "ghost small-btn";
         reclassify.textContent = "Reclassify";
@@ -292,6 +376,7 @@ function renderTable() {
           await loadFaults();
         });
 
+        wrapper.appendChild(saveButton);
         wrapper.appendChild(reclassify);
         cell.appendChild(wrapper);
       } else if (column.name === "image_path") {
@@ -305,14 +390,36 @@ function renderTable() {
           cell.textContent = "No image";
         }
       } else if (coreEditableColumns.includes(column.name) || state.schema.custom_columns.some((item) => item.name === column.name)) {
-        const input = document.createElement("input");
-        input.value = fault[column.name] || "";
-        input.addEventListener("change", async () => {
-          await api(`/api/faults/${fault.id}`, {
-            method: "PUT",
-            body: JSON.stringify({ values: { [column.name]: input.value } }),
-          });
-          fault[column.name] = input.value;
+        const input = column.name === "message"
+          ? document.createElement("textarea")
+          : document.createElement("input");
+        input.value = draftFaultValue(fault, column.name);
+        input.addEventListener("focus", () => {
+          beginTableEdit();
+        });
+        input.addEventListener("input", () => {
+          updateDraftFaultValue(fault.id, column.name, input.value);
+        });
+        input.addEventListener("blur", () => {
+          endTableEdit();
+          renderTable();
+        });
+        input.addEventListener("keydown", async (event) => {
+          if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+            event.preventDefault();
+            try {
+              await saveFaultDraft(fault);
+            } catch (error) {
+              console.error(error);
+              window.alert(`Could not save this row: ${error.message}`);
+            }
+            return;
+          }
+
+          if (event.key === "Enter" && !event.shiftKey && column.name !== "message") {
+            event.preventDefault();
+            input.blur();
+          }
         });
         cell.appendChild(input);
       } else {
@@ -329,6 +436,7 @@ function renderTable() {
 async function loadFaults() {
   if (!state.activeAuditId) {
     state.faults = [];
+    state.draftFaultValues = {};
     renderHeroStats();
     renderTable();
     return;
@@ -336,6 +444,7 @@ async function loadFaults() {
 
   const data = await api(`/api/faults/${state.activeAuditId}`);
   state.faults = data.faults;
+  state.draftFaultValues = {};
   renderHeroStats();
   renderTable();
 }
@@ -358,6 +467,10 @@ async function loadKewRuns() {
 }
 
 async function refreshDashboard() {
+  if (tableEditingActive()) {
+    return;
+  }
+
   const [auditsData, schemaData, botData] = await Promise.all([
     api("/api/audits"),
     api("/api/schema"),
@@ -444,8 +557,34 @@ async function generateReport() {
     return;
   }
 
-  const data = await api(`/api/reports/${state.activeAuditId}`);
-  window.alert(`Report generated:\n${data.file}`);
+  try {
+    const data = await api(`/api/reports/${state.activeAuditId}`);
+    if (data.download_url) {
+      window.open(data.download_url, "_blank", "noopener,noreferrer");
+    }
+    window.alert(`Report generated:\n${data.file_name || data.file}`);
+  } catch (error) {
+    console.error(error);
+    window.alert(`Report generation failed: ${error.message}`);
+  }
+}
+
+async function generateUniformReport() {
+  if (!state.activeAuditId) {
+    alert("Create or select an audit first.");
+    return;
+  }
+
+  try {
+    const data = await api(`/api/reports/${state.activeAuditId}/uniform`);
+    if (data.download_url) {
+      window.open(data.download_url, "_blank", "noopener,noreferrer");
+    }
+    window.alert(`Uniform image report generated:\n${data.file_name || data.file}`);
+  } catch (error) {
+    console.error(error);
+    window.alert(`Uniform image report failed: ${error.message}`);
+  }
 }
 
 async function logoutBot() {
@@ -524,6 +663,7 @@ elements.createAuditBtn.addEventListener("click", createAudit);
 elements.openKewBtnInline.addEventListener("click", () => setKewPanel(true));
 elements.refreshBtn.addEventListener("click", refreshDashboard);
 elements.reportBtn.addEventListener("click", generateReport);
+elements.reportUniformBtn.addEventListener("click", generateUniformReport);
 elements.logoutBotBtn.addEventListener("click", logoutBot);
 elements.saveGroupsBtn.addEventListener("click", saveGroups);
 elements.addColumnBtn.addEventListener("click", addColumn);
@@ -560,4 +700,8 @@ if ("serviceWorker" in navigator) {
 }
 
 await refreshDashboard();
-window.setInterval(refreshDashboard, 10000);
+window.setInterval(() => {
+  if (!tableEditingActive()) {
+    refreshDashboard();
+  }
+}, 10000);

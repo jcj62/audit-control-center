@@ -195,6 +195,12 @@ button:hover {
   transform: translateY(-1px);
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
 button.primary {
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   color: #032121;
@@ -336,6 +342,14 @@ tbody tr:hover {
 
 td input {
   min-width: 120px;
+  width: 100%;
+}
+
+td textarea {
+  width: 100%;
+  min-width: 180px;
+  min-height: 84px;
+  resize: vertical;
 }
 
 .thumb {

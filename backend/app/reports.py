@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import text
@@ -90,33 +91,23 @@ def insert_images_dynamic(cell, image_paths: list[str], max_images: int) -> None
             print(f"Image insert error: {exc}")
 
 
-def beautify_message(raw_text: str | None) -> str:
-    if not raw_text:
-        return ""
+def insert_images_uniform(cell, image_paths: list[str]) -> None:
+    if not image_paths:
+        return
 
-    cleaned = raw_text.strip().capitalize()
-    parts = [part.strip().capitalize() for part in cleaned.split(",")]
-    return ", ".join(parts)
+    cell.text = ""
+    for image_path in image_paths:
+        paragraph = cell.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = paragraph.add_run()
+
+        try:
+            run.add_picture(image_path, width=Cm(7.0), height=Cm(4.0))
+        except Exception as exc:
+            print(f"Image insert error: {exc}")
 
 
-def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir: Path) -> Path:
-    if any(item is None for item in [Document, WD_ORIENT, WD_ROW_HEIGHT_RULE, WD_ALIGN_PARAGRAPH, OxmlElement, qn, Cm, Pt]):
-        raise RuntimeError("python-docx is not installed")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    file_name = f"{audit.audit_name.strip().replace(' ', '_').lower()}_{audit.id}.docx"
-    file_path = output_dir / file_name
-
-    document = Document()
-
-    section = document.sections[0]
-    section.orientation = WD_ORIENT.PORTRAIT
-    section.page_width, section.page_height = section.page_height, section.page_width
-
-    title = document.add_heading("Electrical Safety Audit Report", 0)
-    set_calibri_font(title)
-    document.add_paragraph("")
-
+def _build_grouped_faults(db: Session, audit_id: int, media_dir: Path) -> list[tuple[str, str, dict]]:
     faults = db.execute(
         text(
             """
@@ -126,14 +117,8 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
             ORDER BY cluster_id
             """
         ),
-        {"audit_id": audit.id},
+        {"audit_id": audit_id},
     ).fetchall()
-
-    if not faults:
-        paragraph = document.add_paragraph("No faults recorded.")
-        set_calibri_font(paragraph)
-        document.save(file_path)
-        return file_path
 
     grouped_faults = defaultdict(
         lambda: {
@@ -157,6 +142,10 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
             if os.path.exists(full_path):
                 grouped_faults[key]["images"].append(full_path)
 
+    return [(building, fault_type, data) for (building, fault_type), data in grouped_faults.items()]
+
+
+def _render_report_table(document, grouped_faults: list[tuple[str, str, dict]], uniform_images: bool = False) -> None:
     table = document.add_table(rows=1, cols=3)
     table.autofit = False
 
@@ -196,7 +185,7 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     serial = 1
-    for (_, fault_type), data in grouped_faults.items():
+    for (_, fault_type, data) in grouped_faults:
         row_cells = table.add_row().cells
 
         for cell in row_cells:
@@ -210,20 +199,23 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
         remarks_list = list(dict.fromkeys(data["remarks"]))
         locations = list(dict.fromkeys(data["locations"]))
 
-        num_lines = len(remarks_list)
-        if len(remarks_list) == 1:
-            num_lines += 1
+        if uniform_images:
+            insert_images_uniform(row_cells[1], images)
+        else:
+            num_lines = len(remarks_list)
+            if len(remarks_list) == 1:
+                num_lines += 1
 
-        max_images = max(1, num_lines // 2)
-        max_images = min(max_images, 5)
-        insert_images_dynamic(row_cells[1], images, max_images)
+            max_images = max(1, num_lines // 2)
+            max_images = min(max_images, 5)
+            insert_images_dynamic(row_cells[1], images, max_images)
 
         remarks_cell = row_cells[2]
         fault_type_text = fault_type.upper()
 
         if len(remarks_list) == 1:
             paragraph = remarks_cell.paragraphs[0]
-            paragraph.add_run(beautify_message(remarks_list[0]))
+            paragraph.add_run(remarks_list[0] or "")
             set_calibri_font(paragraph)
 
             fault_paragraph = remarks_cell.add_paragraph()
@@ -236,7 +228,7 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
 
             for remark in remarks_list:
                 bullet = remarks_cell.add_paragraph()
-                bullet.add_run(f"- {beautify_message(remark)}")
+                bullet.add_run(f"- {remark or ''}")
                 set_calibri_font(bullet)
 
         location_paragraph = remarks_cell.add_paragraph()
@@ -245,6 +237,48 @@ def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir:
 
         serial += 1
 
+
+def _generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir: Path, *, uniform_images: bool = False) -> Path:
+    if any(item is None for item in [Document, WD_ORIENT, WD_ROW_HEIGHT_RULE, WD_ALIGN_PARAGRAPH, OxmlElement, qn, Cm, Pt]):
+        raise RuntimeError("python-docx is not installed")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = audit.audit_name.strip().replace(" ", "_").lower()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    suffix = "_uniform" if uniform_images else ""
+    file_name = f"{safe_name}_{audit.id}{suffix}_{timestamp}.docx"
+    file_path = output_dir / file_name
+
+    document = Document()
+
+    section = document.sections[0]
+    section.orientation = WD_ORIENT.PORTRAIT
+    section.page_width, section.page_height = section.page_height, section.page_width
+
+    title_text = "Electrical Safety Audit Report"
+    if uniform_images:
+        title_text = "Electrical Safety Audit Report - Uniform Images"
+    title = document.add_heading(title_text, 0)
+    set_calibri_font(title)
+    document.add_paragraph("")
+
+    grouped_faults = _build_grouped_faults(db, audit.id, media_dir)
+
+    if not grouped_faults:
+        paragraph = document.add_paragraph("No faults recorded.")
+        set_calibri_font(paragraph)
+        document.save(file_path)
+        return file_path
+
+    _render_report_table(document, grouped_faults, uniform_images=uniform_images)
     document.save(file_path)
     print(f"Report generated: {file_path}")
     return file_path
+
+
+def generate_docx_report(db: Session, audit: Audit, output_dir: Path, media_dir: Path) -> Path:
+    return _generate_docx_report(db, audit, output_dir, media_dir, uniform_images=False)
+
+
+def generate_docx_report_uniform_images(db: Session, audit: Audit, output_dir: Path, media_dir: Path) -> Path:
+    return _generate_docx_report(db, audit, output_dir, media_dir, uniform_images=True)
