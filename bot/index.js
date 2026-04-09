@@ -256,6 +256,10 @@ async function syncGroups(sock) {
   }
 }
 
+function shouldKeepQrVisible() {
+  return !hasExistingAuthSession();
+}
+
 async function resolveGroupName(sock, remoteJid) {
   const cachedName = knownGroups.get(remoteJid);
   if (cachedName) {
@@ -407,7 +411,6 @@ async function startBot() {
     knownGroups = new Map();
     await syncState({
       connection_status: "starting",
-      qr_code: null,
       available_groups: [],
       last_error: null,
     });
@@ -458,11 +461,15 @@ async function startBot() {
     if (connection === "close") {
       const reason = describeBotError(lastDisconnect?.error?.message || "connection closed");
       knownGroups = new Map();
-      await syncState({
-        connection_status: "disconnected",
+      const patch = {
+        connection_status: shouldKeepQrVisible() ? "qr" : "disconnected",
         available_groups: [],
         last_error: reason,
-      });
+      };
+      if (!shouldKeepQrVisible()) {
+        patch.qr_code = null;
+      }
+      await syncState(patch);
       setTimeout(startBot, 3000);
     }
   });
