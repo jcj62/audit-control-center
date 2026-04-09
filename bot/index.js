@@ -11,10 +11,17 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { randomUUID } = require("crypto");
+const os = require("os");
 
 const BASE_URL = process.env.API_BASE_URL || "http://127.0.0.1:8000";
-const AUTH_DIR = path.resolve(__dirname, "auth");
-const IMAGE_DIR = path.resolve(__dirname, "..", "backend", "media", "images");
+const DEFAULT_RUNTIME_ROOT = process.env.AUDIT_RUNTIME_DIR
+  || (process.platform === "win32"
+    ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "AuditControlCenter")
+    : process.platform === "darwin"
+      ? path.join(os.homedir(), "Library", "Application Support", "AuditControlCenter")
+      : path.join(os.homedir(), ".local", "share", "AuditControlCenter"));
+const AUTH_DIR = path.resolve(process.env.BOT_AUTH_DIR || path.join(DEFAULT_RUNTIME_ROOT, "bot-auth"));
+const IMAGE_DIR = path.resolve(process.env.BOT_MEDIA_DIR || path.join(DEFAULT_RUNTIME_ROOT, "media", "images"));
 const SHOW_TERMINAL_QR = process.env.SHOW_TERMINAL_QR === "true";
 const BOT_SESSION_ID = process.env.BOT_INSTANCE_ID || randomUUID();
 
@@ -415,6 +422,11 @@ async function startBot() {
     auth: state,
     logger: pino({ level: "silent" }),
     printQRInTerminal: false,
+    browser: ["Audit Control Center", "Desktop", "1.0.0"],
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    shouldSyncHistoryMessage: () => false,
+    generateHighQualityLinkPreview: false,
   });
 
   sock.ev.on("creds.update", saveCreds);

@@ -35,7 +35,7 @@ KEW_OUTPUT_DIR = settings.reports_dir / "kew"
 KEW_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 BUNDLE_OUTPUT_DIR = settings.reports_dir / "bundles"
 BUNDLE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-BOT_AUTH_DIR = settings.frontend_dir.parent / "bot" / "auth"
+BOT_AUTH_DIR = settings.bot_auth_dir
 
 app = FastAPI(title=settings.api_title)
 app.add_middleware(

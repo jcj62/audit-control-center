@@ -4,6 +4,17 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 $runDir = Join-Path $root ".run"
 New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+$runtimeDir = if ($env:LOCALAPPDATA) {
+    Join-Path $env:LOCALAPPDATA "AuditControlCenter"
+} else {
+    Join-Path $root "backend\\runtime"
+}
+New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+$env:AUDIT_RUNTIME_DIR = $runtimeDir
+$env:BOT_AUTH_DIR = Join-Path $runtimeDir "bot-auth"
+$env:BOT_MEDIA_DIR = Join-Path $runtimeDir "media\\images"
+$env:AUDIT_REPORTS_DIR = Join-Path $runtimeDir "reports"
 
 $pythonCmd = "python"
 
