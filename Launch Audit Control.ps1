@@ -15,6 +15,9 @@ $env:AUDIT_RUNTIME_DIR = $runtimeDir
 $env:BOT_AUTH_DIR = Join-Path $runtimeDir "bot-auth"
 $env:BOT_MEDIA_DIR = Join-Path $runtimeDir "media\\images"
 $env:AUDIT_REPORTS_DIR = Join-Path $runtimeDir "reports"
+$bindHost = if ($env:AUDIT_BIND_HOST) { $env:AUDIT_BIND_HOST } else { "0.0.0.0" }
+$backendPort = if ($env:AUDIT_PORT) { [int]$env:AUDIT_PORT } else { 8000 }
+$openUrl = if ($env:AUDIT_OPEN_URL) { $env:AUDIT_OPEN_URL } else { "http://127.0.0.1:$backendPort" }
 
 $pythonCmd = "python"
 
@@ -49,7 +52,7 @@ function Test-RunningPid([string]$pidFile) {
 
 function Test-Backend {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/api/health -TimeoutSec 2
+        $response = Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$backendPort/api/health" -TimeoutSec 2
         return $response.StatusCode -eq 200
     } catch {
         return $false
@@ -72,7 +75,7 @@ function Get-PortOwnerPid([int]$port) {
 
 function Test-BackendSupportsCurrentApi {
     try {
-        Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:8000/api/bot/claim" -Headers @{ "X-Bot-Session" = "probe" } -TimeoutSec 2 | Out-Null
+        Invoke-WebRequest -UseBasicParsing -Method Post -Uri "http://127.0.0.1:$backendPort/api/bot/claim" -Headers @{ "X-Bot-Session" = "probe" } -TimeoutSec 2 | Out-Null
         return $true
     } catch {
         $response = $_.Exception.Response
@@ -94,7 +97,7 @@ function Stop-StaleBackendOnPort {
         return
     }
 
-    $pid = Get-PortOwnerPid 8000
+    $pid = Get-PortOwnerPid $backendPort
     if ($pid) {
         taskkill /PID $pid /T /F | Out-Null
         Start-Sleep -Seconds 2
@@ -121,7 +124,7 @@ function Start-BackendHidden {
     $stdoutLog = Join-Path $runDir "backend.stdout.log"
     $stderrLog = Join-Path $runDir "backend.stderr.log"
     $process = Start-Process -WindowStyle Hidden -FilePath $pythonCmd -ArgumentList @(
-        "-m", "uvicorn", "backend.app.main:app", "--host", "127.0.0.1", "--port", "8000"
+        "-m", "uvicorn", "backend.app.main:app", "--host", $bindHost, "--port", "$backendPort"
     ) -WorkingDirectory $root -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
     Set-Content -Path (Join-Path $runDir "backend.pid") -Value $process.Id
 
@@ -155,7 +158,7 @@ function Reset-BotStateIfSessionMissing {
     }
 
     try {
-        Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/bot/reset-state" -TimeoutSec 5 | Out-Null
+        Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:$backendPort/api/bot/reset-state" -TimeoutSec 5 | Out-Null
     } catch {
     }
 }
@@ -172,12 +175,12 @@ function Open-AppWindow {
 
     foreach ($browser in ($edgePaths + $chromePaths)) {
         if (Test-Path $browser) {
-            Start-Process -FilePath $browser -ArgumentList "--app=http://127.0.0.1:8000"
+            Start-Process -FilePath $browser -ArgumentList "--app=$openUrl"
             return
         }
     }
 
-    Start-Process "http://127.0.0.1:8000"
+    Start-Process $openUrl
 }
 
 Start-BackendHidden

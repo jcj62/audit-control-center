@@ -1,4 +1,4 @@
-const CACHE_NAME = "audit-control-shell-v3";
+const CACHE_NAME = "audit-control-shell-v6";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());

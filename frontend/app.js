@@ -1,3 +1,7 @@
+const APP_VERSION = "2026.04.09.3";
+const APP_VERSION_KEY = "audit-control-app-version";
+const APP_VERSION_RELOAD_KEY = "audit-control-app-version-reload";
+
 const state = {
   audits: [],
   activeAuditId: null,
@@ -80,6 +84,40 @@ async function apiForm(path, formData) {
   }
 
   return response.json();
+}
+
+async function clearBrowserAppCaches() {
+  if (!("caches" in window)) {
+    return;
+  }
+
+  const keys = await caches.keys();
+  await Promise.all(keys.map((key) => caches.delete(key)));
+}
+
+async function forceAppRefreshIfVersionChanged() {
+  const previousVersion = localStorage.getItem(APP_VERSION_KEY);
+  if (previousVersion === APP_VERSION) {
+    sessionStorage.removeItem(APP_VERSION_RELOAD_KEY);
+    return;
+  }
+
+  localStorage.setItem(APP_VERSION_KEY, APP_VERSION);
+
+  if ("serviceWorker" in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+
+  await clearBrowserAppCaches();
+
+  if (!sessionStorage.getItem(APP_VERSION_RELOAD_KEY)) {
+    sessionStorage.setItem(APP_VERSION_RELOAD_KEY, APP_VERSION);
+    window.location.reload();
+    throw new Error("Reloading app shell");
+  }
+
+  sessionStorage.removeItem(APP_VERSION_RELOAD_KEY);
 }
 
 function updateConnectionPill(status) {
@@ -691,9 +729,15 @@ elements.auditSelect.addEventListener("change", async (event) => {
   await refreshDashboard();
 });
 
+await forceAppRefreshIfVersionChanged().catch((error) => {
+  if (error.message !== "Reloading app shell") {
+    console.error("App shell refresh failed", error);
+  }
+});
+
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch((error) => {
+    navigator.serviceWorker.register(`/service-worker.js?v=${APP_VERSION}`).catch((error) => {
       console.error("Service worker registration failed", error);
     });
   });

@@ -13,6 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 RUN_DIR = ROOT / ".run"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
+BACKEND_BIND_HOST = os.getenv("AUDIT_BIND_HOST", "0.0.0.0")
+BACKEND_PORT = int(os.getenv("AUDIT_PORT", "8000"))
+LOCAL_OPEN_URL = os.getenv("AUDIT_OPEN_URL", f"http://127.0.0.1:{BACKEND_PORT}")
 
 
 def runtime_root() -> Path:
@@ -42,7 +45,7 @@ def build_env() -> dict[str, str]:
 
 def backend_running() -> bool:
     try:
-        with socket.create_connection(("127.0.0.1", 8000), timeout=1):
+        with socket.create_connection(("127.0.0.1", BACKEND_PORT), timeout=1):
             return True
     except OSError:
         return False
@@ -65,9 +68,9 @@ def start_backend(env: dict[str, str]) -> None:
             "uvicorn",
             "backend.app.main:app",
             "--host",
-            "127.0.0.1",
+            BACKEND_BIND_HOST,
             "--port",
-            "8000",
+            str(BACKEND_PORT),
         ],
         cwd=ROOT,
         env=env,
@@ -101,7 +104,7 @@ def main() -> None:
     env = build_env()
     start_backend(env)
     start_bot(env)
-    webbrowser.open("http://127.0.0.1:8000")
+    webbrowser.open(LOCAL_OPEN_URL)
 
 
 if __name__ == "__main__":
