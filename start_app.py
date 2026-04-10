@@ -15,7 +15,28 @@ RUN_DIR = ROOT / ".run"
 RUN_DIR.mkdir(parents=True, exist_ok=True)
 BACKEND_BIND_HOST = os.getenv("AUDIT_BIND_HOST", "0.0.0.0")
 BACKEND_PORT = int(os.getenv("AUDIT_PORT", "8000"))
-LOCAL_OPEN_URL = os.getenv("AUDIT_OPEN_URL", f"http://127.0.0.1:{BACKEND_PORT}")
+
+
+def detect_lan_ip() -> str | None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))
+            ip = probe.getsockname()[0]
+    except OSError:
+        return None
+
+    if ip.startswith("127."):
+        return None
+    return ip
+
+
+def app_open_url() -> str:
+    if os.getenv("AUDIT_OPEN_URL"):
+        return os.environ["AUDIT_OPEN_URL"]
+
+    lan_ip = detect_lan_ip()
+    host = lan_ip or "127.0.0.1"
+    return f"http://{host}:{BACKEND_PORT}"
 
 
 def runtime_root() -> Path:
@@ -143,7 +164,7 @@ def main() -> None:
     env = build_env()
     start_backend(env)
     start_bot(env)
-    webbrowser.open(LOCAL_OPEN_URL)
+    webbrowser.open(app_open_url())
 
 
 if __name__ == "__main__":

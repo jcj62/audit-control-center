@@ -17,8 +17,49 @@ $env:BOT_MEDIA_DIR = Join-Path $runtimeDir "media\\images"
 $env:AUDIT_REPORTS_DIR = Join-Path $runtimeDir "reports"
 $bindHost = if ($env:AUDIT_BIND_HOST) { $env:AUDIT_BIND_HOST } else { "0.0.0.0" }
 $backendPort = if ($env:AUDIT_PORT) { [int]$env:AUDIT_PORT } else { 8000 }
-$openUrl = if ($env:AUDIT_OPEN_URL) { $env:AUDIT_OPEN_URL } else { "http://127.0.0.1:$backendPort" }
 $env:API_BASE_URL = "http://127.0.0.1:$backendPort"
+
+function Get-LanIp {
+    try {
+        $route = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop |
+            Sort-Object RouteMetric |
+            Select-Object -First 1
+
+        if ($route) {
+            $address = Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex $route.InterfaceIndex -ErrorAction Stop |
+                Where-Object {
+                    $_.IPAddress -notlike "127.*" -and
+                    $_.IPAddress -notlike "169.254.*"
+                } |
+                Select-Object -First 1
+
+            if ($address) {
+                return $address.IPAddress
+            }
+        }
+    } catch {
+    }
+
+    try {
+        $addresses = [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) |
+            Where-Object {
+                $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and
+                $_.IPAddressToString -notlike "127.*" -and
+                $_.IPAddressToString -notlike "169.254.*"
+            }
+
+        if ($addresses) {
+            return $addresses[0].IPAddressToString
+        }
+    } catch {
+    }
+
+    return $null
+}
+
+$lanIp = Get-LanIp
+$openHost = if ($lanIp) { $lanIp } else { "127.0.0.1" }
+$openUrl = if ($env:AUDIT_OPEN_URL) { $env:AUDIT_OPEN_URL } else { "http://$openHost`:$backendPort" }
 
 $pythonCmd = "python"
 
