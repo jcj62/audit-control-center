@@ -22,6 +22,7 @@ const DEFAULT_RUNTIME_ROOT = process.env.AUDIT_RUNTIME_DIR
       : path.join(os.homedir(), ".local", "share", "AuditControlCenter"));
 const AUTH_DIR = path.resolve(process.env.BOT_AUTH_DIR || path.join(DEFAULT_RUNTIME_ROOT, "bot-auth"));
 const IMAGE_DIR = path.resolve(process.env.BOT_MEDIA_DIR || path.join(DEFAULT_RUNTIME_ROOT, "media", "images"));
+const LOCK_FILE = path.join(DEFAULT_RUNTIME_ROOT, "bot.lock");
 const SHOW_TERMINAL_QR = process.env.SHOW_TERMINAL_QR === "true";
 const BOT_SESSION_ID = process.env.BOT_INSTANCE_ID || randomUUID();
 
@@ -31,6 +32,87 @@ let knownGroups = new Map();
 let syncInterval = null;
 const sessionState = {};
 const auditNameMap = new Map();
+let lockHandle = null;
+
+function processIsRunning(pid) {
+  if (!pid || Number.isNaN(pid)) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseRuntimeLock() {
+  if (!lockHandle) {
+    return;
+  }
+
+  try {
+    fs.closeSync(lockHandle);
+  } catch {
+  }
+
+  lockHandle = null;
+
+  try {
+    if (fs.existsSync(LOCK_FILE)) {
+      const currentPid = Number(fs.readFileSync(LOCK_FILE, "utf8").trim());
+      if (currentPid === process.pid) {
+        fs.unlinkSync(LOCK_FILE);
+      }
+    }
+  } catch {
+  }
+}
+
+function acquireRuntimeLock() {
+  fs.mkdirSync(DEFAULT_RUNTIME_ROOT, { recursive: true });
+
+  try {
+    lockHandle = fs.openSync(LOCK_FILE, "wx");
+    fs.writeFileSync(lockHandle, String(process.pid));
+    return true;
+  } catch (error) {
+    if (error.code !== "EEXIST") {
+      throw error;
+    }
+
+    let existingPid = null;
+    try {
+      existingPid = Number(fs.readFileSync(LOCK_FILE, "utf8").trim());
+    } catch {
+    }
+
+    if (processIsRunning(existingPid)) {
+      console.log(`Another bot instance is already running with PID ${existingPid}.`);
+      return false;
+    }
+
+    try {
+      fs.unlinkSync(LOCK_FILE);
+    } catch {
+    }
+
+    lockHandle = fs.openSync(LOCK_FILE, "wx");
+    fs.writeFileSync(lockHandle, String(process.pid));
+    return true;
+  }
+}
+
+process.on("exit", releaseRuntimeLock);
+process.on("SIGINT", () => {
+  releaseRuntimeLock();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  releaseRuntimeLock();
+  process.exit(0);
+});
 
 function hasExistingAuthSession() {
   if (!fs.existsSync(AUTH_DIR)) {
@@ -406,6 +488,9 @@ async function handleCommandMessage(sock, remoteJid, text, groupName) {
 
 async function startBot() {
   ensureDirs();
+  if (!acquireRuntimeLock()) {
+    return;
+  }
   await claimBotSession();
   if (!hasExistingAuthSession()) {
     knownGroups = new Map();
@@ -556,4 +641,6 @@ async function startBot() {
 
 startBot().catch((error) => {
   console.error("Bot crashed on startup:", error);
+  releaseRuntimeLock();
+  process.exit(1);
 });

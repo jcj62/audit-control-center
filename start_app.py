@@ -40,6 +40,7 @@ def build_env() -> dict[str, str]:
     env["BOT_MEDIA_DIR"] = str(runtime_dir / "media" / "images")
     env["AUDIT_REPORTS_DIR"] = str(runtime_dir / "reports")
     env["BOT_INSTANCE_ID"] = str(uuid.uuid4())
+    env["API_BASE_URL"] = f"http://127.0.0.1:{BACKEND_PORT}"
     return env
 
 
@@ -53,6 +54,41 @@ def backend_running() -> bool:
 
 def write_pid(name: str, pid: int) -> None:
     (RUN_DIR / f"{name}.pid").write_text(str(pid), encoding="utf-8")
+
+
+def pid_is_running(pid: int) -> bool:
+    try:
+        if os.name == "nt":
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return str(pid) in result.stdout
+
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def pid_file_running(name: str) -> bool:
+    pid_path = RUN_DIR / f"{name}.pid"
+    if not pid_path.exists():
+        return False
+
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except ValueError:
+        pid_path.unlink(missing_ok=True)
+        return False
+
+    if pid_is_running(pid):
+        return True
+
+    pid_path.unlink(missing_ok=True)
+    return False
 
 
 def start_backend(env: dict[str, str]) -> None:
@@ -88,6 +124,9 @@ def start_backend(env: dict[str, str]) -> None:
 
 
 def start_bot(env: dict[str, str]) -> None:
+    if pid_file_running("bot"):
+        return
+
     stdout = (RUN_DIR / "bot.stdout.log").open("ab")
     stderr = (RUN_DIR / "bot.stderr.log").open("ab")
     process = subprocess.Popen(

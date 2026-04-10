@@ -18,6 +18,7 @@ $env:AUDIT_REPORTS_DIR = Join-Path $runtimeDir "reports"
 $bindHost = if ($env:AUDIT_BIND_HOST) { $env:AUDIT_BIND_HOST } else { "0.0.0.0" }
 $backendPort = if ($env:AUDIT_PORT) { [int]$env:AUDIT_PORT } else { 8000 }
 $openUrl = if ($env:AUDIT_OPEN_URL) { $env:AUDIT_OPEN_URL } else { "http://127.0.0.1:$backendPort" }
+$env:API_BASE_URL = "http://127.0.0.1:$backendPort"
 
 $pythonCmd = "python"
 
@@ -105,7 +106,7 @@ function Stop-StaleBackendOnPort {
 }
 
 function Test-AuthSession {
-    $authDir = Join-Path $root "bot\\auth"
+    $authDir = $env:BOT_AUTH_DIR
     if (!(Test-Path $authDir)) {
         return $false
     }
